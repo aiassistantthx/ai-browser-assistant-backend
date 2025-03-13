@@ -5,7 +5,6 @@ import { config } from './config';
 import cors from 'cors';
 import { createServer } from 'http';
 import { IncomingMessage } from 'http';
-import { URL } from 'url';
 
 const app = express();
 const langChainService = new LangChainService();
@@ -25,12 +24,13 @@ app.get('/health', (req, res) => {
 // Create HTTP server
 const server = createServer(app);
 
-// Configure WebSocket server
+// Configure WebSocket server with path
 const wss = new WebSocketServer({ 
   server,
-  path: '/',
+  path: '/ws', // Add specific path for WebSocket
   verifyClient: (info: { origin: string, req: IncomingMessage }, callback) => {
     console.log('Connection attempt from origin:', info.origin);
+    console.log('Connection headers:', info.req.headers);
     console.log('Allowed origins:', config.allowedOrigins);
     
     // For Chrome extensions, origin will be in the format 'chrome-extension://[extension-id]'
@@ -127,7 +127,7 @@ wss.on('connection', (ws, request) => {
 });
 
 // Start the server
-const port = config.port || 3000;
+const port = process.env.PORT || 8080;
 server.listen(port, () => {
   console.log(`Server is running on port ${port}`);
   console.log('Environment:', process.env.NODE_ENV);

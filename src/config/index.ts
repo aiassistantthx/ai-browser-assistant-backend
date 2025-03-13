@@ -10,6 +10,7 @@ export interface Config {
   allowedOrigins: string[];
   langchainVerbose: boolean;
   langchainHandler: string;
+  internalUrl: string;
 }
 
 export const config: Config = {
@@ -19,5 +20,6 @@ export const config: Config = {
   jwtSecret: process.env.JWT_SECRET || 'your-default-secret',
   allowedOrigins: (process.env.ALLOWED_ORIGINS || '').split(','),
   langchainVerbose: process.env.LANGCHAIN_VERBOSE === 'true',
-  langchainHandler: process.env.LANGCHAIN_HANDLER || 'langchain'
+  langchainHandler: process.env.LANGCHAIN_HANDLER || 'langchain',
+  internalUrl: process.env.RAILWAY_INTERNAL_URL || 'localhost:3000'
 };

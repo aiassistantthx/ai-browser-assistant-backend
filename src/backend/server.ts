@@ -18,7 +18,10 @@ const app = express();
 
 // Basic request logging middleware
 app.use((req, res, next) => {
-  console.log(`${new Date().toISOString()} ${req.method} ${req.url}`);
+  console.log(`${new Date().toISOString()} ${req.method} ${req.url}`, {
+    headers: req.headers,
+    ip: req.ip
+  });
   next();
 });
 
@@ -261,9 +264,10 @@ wss.on('connection', (ws, request) => {
 const port = parseInt(process.env.PORT || '3000', 10);
 
 try {
-  server.listen(port, () => {
+  server.listen(port, '0.0.0.0', () => {
     const serverInfo = {
       port,
+      host: '0.0.0.0',
       pid: process.pid,
       environment: process.env.NODE_ENV || 'development',
       nodeVersion: process.version,
@@ -286,7 +290,7 @@ try {
       error: error.message,
       code: (error as any).code,
       syscall: (error as any).syscall,
-      port: (error as any).port,
+      port: error instanceof Error ? (error as any).port : undefined,
       timestamp: new Date().toISOString()
     });
   });

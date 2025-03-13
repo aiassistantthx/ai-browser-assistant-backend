@@ -1,30 +1,39 @@
 import express from 'express';
-import cors from 'cors';
 import { WebSocketServer } from 'ws';
+import { LangChainService } from './services/langchain';
 import { config } from './config';
-import { setupWebSocketHandlers } from './websocket';
+import cors from 'cors';
 
 const app = express();
+const langChainService = new LangChainService();
 
-// Middleware
 app.use(cors({
-  origin: config.allowedOrigins,
-  methods: ['GET', 'POST'],
-  credentials: true,
+  origin: config.allowedOrigins
 }));
 
 app.use(express.json());
 
-// Health check route
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok' });
+const server = app.listen(config.port, () => {
+  console.log(`Server is running on port ${config.port}`);
 });
 
-// Create HTTP server
-const server = app.listen(parseInt(config.port), () => {
-  console.log(`Server running on port ${config.port}`);
-});
-
-// Create WebSocket server
 const wss = new WebSocketServer({ server });
-setupWebSocketHandlers(wss);
+
+wss.on('connection', (ws) => {
+  console.log('Client connected');
+
+  ws.on('message', async (message) => {
+    try {
+      const data = JSON.parse(message.toString());
+      const taskPlan = await langChainService.createTaskPlan(data.command);
+      ws.send(JSON.stringify(taskPlan));
+    } catch (error) {
+      console.error('Error processing message:', error);
+      ws.send(JSON.stringify({ error: 'Failed to process command' }));
+    }
+  });
+
+  ws.on('close', () => {
+    console.log('Client disconnected');
+  });
+});

@@ -1,5 +1,5 @@
-import { OpenAI } from 'langchain/llms/openai';
-import { PromptTemplate } from 'langchain/prompts';
+import { OpenAI } from '@langchain/openai';
+import { PromptTemplate } from '@langchain/core/prompts';
 import { config } from '../config';
 
 interface TaskStep {
@@ -21,9 +21,22 @@ export class LangChainService {
       temperature: 0.7,
     });
 
-    this.promptTemplate = PromptTemplate.fromTemplate(
-      "Create a step-by-step plan to accomplish the following task in a web browser:\n{command}\n\nRespond with a JSON object containing an array of steps. Each step should have:\n- action: The browser action to perform (e.g., \"navigate\", \"click\", \"type\")\n- params: Parameters needed for the action (e.g., URL, selector, text)\n\nExample response:\n{\n  \"steps\": [\n    {\"action\": \"navigate\", \"params\": {\"url\": \"https://example.com\"}},\n    {\"action\": \"click\", \"params\": {\"selector\": \"#submit-button\"}}\n  ]\n}"
-    );
+    const template = `Create a step-by-step plan to accomplish the following task in a web browser:
+{command}
+
+Respond with a JSON object containing an array of steps. Each step should have:
+- action: The browser action to perform (e.g., "navigate", "click", "type")
+- params: Parameters needed for the action (e.g., URL, selector, text)
+
+Example response:
+{
+  "steps": [
+    {"action": "navigate", "params": {"url": "https://example.com"}},
+    {"action": "click", "params": {"selector": "#submit-button"}}
+  ]
+}`;
+
+    this.promptTemplate = PromptTemplate.fromTemplate(template);
   }
 
   async createTaskPlan(command: string): Promise<TaskPlan> {

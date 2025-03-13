@@ -8,15 +8,19 @@ import { createServer } from 'http';
 // Error handling for uncaught exceptions
 process.on('uncaughtException', (error: Error) => {
   console.error('Uncaught Exception:', error);
-  // Keep the process running
 });
 
 process.on('unhandledRejection', (reason: unknown, promise: Promise<unknown>) => {
   console.error('Unhandled Rejection at:', promise, 'reason:', reason);
-  // Keep the process running
 });
 
 const app = express();
+
+// Basic request logging middleware
+app.use((req, res, next) => {
+  console.log(`${new Date().toISOString()} ${req.method} ${req.url}`);
+  next();
+});
 
 // Initialize services
 let langChainService: LangChainService | undefined;
@@ -27,72 +31,86 @@ try {
   console.error('Error initializing LangChain service:', error instanceof Error ? error.message : String(error));
 }
 
-// Basic error handling middleware
-app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
-  console.error('Express error:', err);
-  res.status(500).json({ 
-    error: 'Internal Server Error',
-    message: err.message
-  });
-});
+// Enable CORS - allow all origins for testing
+app.use(cors());
 
-// Enable CORS
-app.use(cors({
-  origin: '*', // Allow all origins for now
-  methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-}));
-
+// Parse JSON bodies
 app.use(express.json());
 
-// Basic route for root path
+// Basic route for testing
+app.get('/test', (req, res) => {
+  res.send('Server is running');
+});
+
+// Root path
 app.get('/', (req, res) => {
-  res.status(200).json({ 
-    message: 'AI Browser Assistant API',
-    version: '1.0.0',
-    timestamp: new Date().toISOString()
-  });
+  try {
+    res.status(200).json({ 
+      message: 'AI Browser Assistant API',
+      version: '1.0.0',
+      timestamp: new Date().toISOString(),
+      endpoints: [
+        '/test',
+        '/health',
+        '/connection-test',
+        '/ws (WebSocket)'
+      ]
+    });
+  } catch (error) {
+    console.error('Error in root path:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 // Health check endpoint
 app.get('/health', (req, res) => {
-  const health = {
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-    env: {
-      NODE_ENV: process.env.NODE_ENV || 'development',
-      PORT: process.env.PORT || 3000,
-    },
-    config: {
-      allowedOrigins: config.allowedOrigins
-    },
-    services: {
-      langchain: langChainService ? 'initialized' : 'not initialized'
-    },
-    memory: process.memoryUsage(),
-    uptime: process.uptime()
-  };
+  try {
+    const health = {
+      status: 'ok',
+      timestamp: new Date().toISOString(),
+      env: {
+        NODE_ENV: process.env.NODE_ENV || 'development',
+        PORT: process.env.PORT || 3000,
+      },
+      config: {
+        allowedOrigins: config.allowedOrigins
+      },
+      services: {
+        langchain: langChainService ? 'initialized' : 'not initialized'
+      },
+      memory: process.memoryUsage(),
+      uptime: process.uptime()
+    };
 
-  console.log('Health check:', health);
-  res.status(200).json(health);
+    console.log('Health check:', health);
+    res.status(200).json(health);
+  } catch (error) {
+    console.error('Error in health check:', error);
+    res.status(500).json({ error: 'Health check failed' });
+  }
 });
 
 // Connection test endpoint
 app.get('/connection-test', (req, res) => {
-  const origin = req.headers.origin || 'unknown';
-  const requestInfo = {
-    origin,
-    headers: req.headers,
-    ip: req.ip,
-    timestamp: new Date().toISOString()
-  };
-  
-  console.log('Connection test request:', requestInfo);
-  res.status(200).json({
-    status: 'ok',
-    message: 'Connection test successful',
-    request: requestInfo
-  });
+  try {
+    const origin = req.headers.origin || 'unknown';
+    const requestInfo = {
+      origin,
+      headers: req.headers,
+      ip: req.ip,
+      timestamp: new Date().toISOString()
+    };
+    
+    console.log('Connection test request:', requestInfo);
+    res.status(200).json({
+      status: 'ok',
+      message: 'Connection test successful',
+      request: requestInfo
+    });
+  } catch (error) {
+    console.error('Error in connection test:', error);
+    res.status(500).json({ error: 'Connection test failed' });
+  }
 });
 
 // Create HTTP server
@@ -125,7 +143,6 @@ wss.on('connection', (ws, request) => {
     ip: clientIp,
     origin: clientOrigin,
     path: request.url,
-    headers: request.headers,
     timestamp: new Date().toISOString()
   });
 

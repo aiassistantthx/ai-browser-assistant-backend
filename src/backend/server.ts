@@ -8,9 +8,15 @@ import { createServer } from 'http';
 const app = express();
 const langChainService = new LangChainService();
 
-// Enable CORS
+// Enable CORS with specific configuration
 app.use(cors({
-  origin: '*', // Temporarily allow all origins for testing
+  origin: (origin, callback) => {
+    if (!origin || config.allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true
@@ -18,45 +24,47 @@ app.use(cors({
 
 app.use(express.json());
 
-// Add health check endpoint
+// Basic route for root path
+app.get('/', (req, res) => {
+  res.status(200).json({ message: 'AI Browser Assistant API' });
+});
+
+// Health check endpoint
 app.get('/health', (req, res) => {
   res.status(200).json({ 
     status: 'ok',
     timestamp: new Date().toISOString(),
     allowedOrigins: config.allowedOrigins,
-    environment: process.env.NODE_ENV,
-    port: process.env.PORT
+    environment: process.env.NODE_ENV || 'development',
+    port: process.env.PORT || 3000
   });
 });
 
-// Add connection test endpoint
+// Connection test endpoint
 app.get('/connection-test', (req, res) => {
   const origin = req.headers.origin || 'unknown';
-  console.log('Connection test from origin:', origin);
+  console.log('Connection test request:', {
+    origin,
+    headers: req.headers,
+    ip: req.ip,
+    timestamp: new Date().toISOString()
+  });
   
-  if (origin === 'unknown' || config.allowedOrigins.includes(origin)) {
-    res.status(200).json({
-      status: 'ok',
-      message: 'Connection test successful',
-      origin: origin,
-      timestamp: new Date().toISOString()
-    });
-  } else {
-    res.status(403).json({
-      status: 'error',
-      message: 'Origin not allowed',
-      origin: origin,
-      allowedOrigins: config.allowedOrigins
-    });
-  }
+  res.status(200).json({
+    status: 'ok',
+    message: 'Connection test successful',
+    origin: origin,
+    timestamp: new Date().toISOString()
+  });
 });
 
 // Create HTTP server
 const server = createServer(app);
 
-// Configure WebSocket server
+// Configure WebSocket server with specific path
 const wss = new WebSocketServer({ 
   server,
+  path: '/ws',
   clientTracking: true,
   perMessageDeflate: false
 });
@@ -75,10 +83,12 @@ wss.on('connection', (ws, request) => {
   const clientIp = request.socket.remoteAddress || 'unknown';
   const clientOrigin = request.headers.origin || 'unknown';
   
-  console.log('New client connected:', {
+  console.log('New WebSocket connection:', {
     id: clientId,
     ip: clientIp,
     origin: clientOrigin,
+    path: request.url,
+    headers: request.headers,
     timestamp: new Date().toISOString()
   });
 
@@ -90,8 +100,6 @@ wss.on('connection', (ws, request) => {
     connectedAt: new Date()
   });
 
-  console.log('Total connected clients:', clients.size);
-
   // Send welcome message
   ws.send(JSON.stringify({
     type: 'CONNECTION_ESTABLISHED',
@@ -102,49 +110,56 @@ wss.on('connection', (ws, request) => {
   // Handle incoming messages
   ws.on('message', async (message) => {
     try {
-      console.log('Received message from client', clientId + ':', message.toString());
       const data = JSON.parse(message.toString());
+      console.log('Received message:', {
+        clientId,
+        type: data.type,
+        timestamp: new Date().toISOString()
+      });
       
-      if (data.type === 'INIT') {
-        console.log('Received INIT message with sessionId:', data.sessionId);
-        ws.send(JSON.stringify({ 
-          type: 'SESSION_INIT',
-          sessionId: data.sessionId || clientId
-        }));
-        return;
-      }
-      
-      if (data.type === 'ANALYZE_TASK') {
-        console.log('Analyzing task:', data.task);
-        try {
-          const taskPlan = await langChainService.createTaskPlan(data.task);
-          ws.send(JSON.stringify({
-            type: 'TASK_PLAN',
-            taskId: Date.now().toString(),
-            plan: taskPlan
+      switch (data.type) {
+        case 'INIT':
+          ws.send(JSON.stringify({ 
+            type: 'SESSION_INIT',
+            sessionId: data.sessionId || clientId
           }));
-        } catch (error) {
-          console.error('Error creating task plan:', error);
-          ws.send(JSON.stringify({
+          break;
+          
+        case 'ANALYZE_TASK':
+          try {
+            const taskPlan = await langChainService.createTaskPlan(data.task);
+            ws.send(JSON.stringify({
+              type: 'TASK_PLAN',
+              taskId: Date.now().toString(),
+              plan: taskPlan
+            }));
+          } catch (error) {
+            console.error('Task analysis error:', error);
+            ws.send(JSON.stringify({
+              type: 'ERROR',
+              error: 'Failed to analyze task'
+            }));
+          }
+          break;
+          
+        case 'BROWSER_STATE':
+          // Just log the state update
+          console.log('Browser state updated:', {
+            clientId,
+            url: data.state?.url,
+            timestamp: new Date().toISOString()
+          });
+          break;
+          
+        default:
+          console.log('Unknown message type:', data.type);
+          ws.send(JSON.stringify({ 
             type: 'ERROR',
-            error: 'Failed to create task plan'
+            error: 'Unknown message type' 
           }));
-        }
-        return;
       }
-
-      if (data.type === 'BROWSER_STATE') {
-        console.log('Received browser state update from client', clientId);
-        return;
-      }
-
-      console.log('Unknown message type:', data.type);
-      ws.send(JSON.stringify({ 
-        type: 'ERROR',
-        error: 'Unknown message type' 
-      }));
     } catch (error) {
-      console.error('Error processing message:', error);
+      console.error('Message processing error:', error);
       ws.send(JSON.stringify({ 
         type: 'ERROR',
         error: 'Failed to process message' 
@@ -153,22 +168,36 @@ wss.on('connection', (ws, request) => {
   });
 
   // Handle client disconnect
-  ws.on('close', () => {
-    console.log('Client disconnected:', clientId);
+  ws.on('close', (code, reason) => {
+    console.log('Client disconnected:', {
+      id: clientId,
+      code,
+      reason: reason.toString(),
+      timestamp: new Date().toISOString()
+    });
     clients.delete(clientId);
-    console.log('Remaining clients:', clients.size);
   });
 
   // Handle errors
   ws.on('error', (error) => {
-    console.error('WebSocket client error:', clientId, error);
+    console.error('WebSocket error:', {
+      clientId,
+      error,
+      timestamp: new Date().toISOString()
+    });
   });
 });
 
 // Start the server
 const port = process.env.PORT || 3000;
-server.listen(port, () => {
-  console.log(`Server is running on port ${port}`);
-  console.log('Environment:', process.env.NODE_ENV);
-  console.log('Allowed origins:', config.allowedOrigins);
+const host = '0.0.0.0'; // Listen on all network interfaces
+
+server.listen(port, host, () => {
+  console.log(`Server started:`, {
+    port,
+    host,
+    environment: process.env.NODE_ENV || 'development',
+    allowedOrigins: config.allowedOrigins,
+    timestamp: new Date().toISOString()
+  });
 });

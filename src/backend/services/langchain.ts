@@ -16,9 +16,14 @@ export class LangChainService {
   private promptTemplate: PromptTemplate;
 
   constructor() {
+    if (!config.openaiApiKey) {
+      throw new Error('OPENAI_API_KEY environment variable is not set');
+    }
+
     this.model = new OpenAI({
       openAIApiKey: config.openaiApiKey,
       temperature: 0.7,
+      modelName: 'gpt-3.5-turbo'
     });
 
     this.promptTemplate = new PromptTemplate({
@@ -30,7 +35,7 @@ export class LangChainService {
   async createTaskPlan(command: string): Promise<TaskPlan> {
     try {
       const prompt = await this.promptTemplate.format({ command });
-      const response = await this.model.call(prompt);
+      const response = await this.model.invoke(prompt);
       
       try {
         return JSON.parse(response);
@@ -43,4 +48,15 @@ export class LangChainService {
       throw new Error('Failed to create task plan');
     }
   }
+
+  async generateResponse(prompt: string): Promise<string> {
+    try {
+      return await this.model.invoke(prompt);
+    } catch (error) {
+      console.error('Error generating response:', error);
+      throw error;
+    }
+  }
 }
+
+export const langChainService = new LangChainService();

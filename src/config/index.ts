@@ -13,7 +13,7 @@ export interface Config {
 }
 
 export const config: Config = {
-  port: parseInt(process.env.PORT || '3000', 10),
+  port: parseInt(process.env.PORT || process.env.RAILWAY_PORT || '3000', 10),
   nodeEnv: process.env.NODE_ENV || 'development',
   openaiApiKey: process.env.OPENAI_API_KEY || '',
   jwtSecret: process.env.JWT_SECRET || 'your-default-secret',

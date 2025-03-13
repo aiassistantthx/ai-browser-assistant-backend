@@ -31,10 +31,10 @@ app.get('/health', (req, res) => {
 
 // Add connection test endpoint
 app.get('/connection-test', (req, res) => {
-  const origin = req.headers.origin;
+  const origin = req.headers.origin || 'unknown';
   console.log('Connection test from origin:', origin);
   
-  if (config.allowedOrigins.includes(origin)) {
+  if (origin === 'unknown' || config.allowedOrigins.includes(origin)) {
     res.status(200).json({
       status: 'ok',
       message: 'Connection test successful',
@@ -72,8 +72,8 @@ wss.on('error', (error) => {
 // Connection handling
 wss.on('connection', (ws, request) => {
   const clientId = Date.now().toString();
-  const clientIp = request.socket.remoteAddress;
-  const clientOrigin = request.headers.origin;
+  const clientIp = request.socket.remoteAddress || 'unknown';
+  const clientOrigin = request.headers.origin || 'unknown';
   
   console.log('New client connected:', {
     id: clientId,

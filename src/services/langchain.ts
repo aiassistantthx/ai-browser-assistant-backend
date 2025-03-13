@@ -22,21 +22,8 @@ export class LangChainService {
     });
 
     this.promptTemplate = new PromptTemplate({
-      template: `Create a step-by-step plan to accomplish the following task in a web browser:
-      {command}
-      
-      Respond with a JSON object containing an array of steps. Each step should have:
-      - action: The browser action to perform (e.g., "navigate", "click", "type")
-      - params: Parameters needed for the action (e.g., URL, selector, text)
-      
-      Example response:
-      {
-        "steps": [
-          {"action": "navigate", "params": {"url": "https://example.com"}},
-          {"action": "click", "params": {"selector": "#submit-button"}}
-        ]
-      }`,
-      inputVariables: ['command'],
+      template: "Create a step-by-step plan to accomplish the following task in a web browser:\n{command}\n\nRespond with a JSON object containing an array of steps. Each step should have:\n- action: The browser action to perform (e.g., \"navigate\", \"click\", \"type\")\n- params: Parameters needed for the action (e.g., URL, selector, text)\n\nExample response:\n{\n  \"steps\": [\n    {\"action\": \"navigate\", \"params\": {\"url\": \"https://example.com\"}},\n    {\"action\": \"click\", \"params\": {\"selector\": \"#submit-button\"}}\n  ]\n}",
+      inputVariables: ["command"]
     });
   }
 

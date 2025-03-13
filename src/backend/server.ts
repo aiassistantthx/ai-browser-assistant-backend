@@ -189,13 +189,10 @@ wss.on('connection', (ws, request) => {
 });
 
 // Start the server
-const port = process.env.PORT || 3000;
-const host = '0.0.0.0'; // Listen on all network interfaces
-
-server.listen(port, host, () => {
+const port = parseInt(process.env.PORT || '3000', 10);
+server.listen(port, () => {
   console.log(`Server started:`, {
     port,
-    host,
     environment: process.env.NODE_ENV || 'development',
     allowedOrigins: config.allowedOrigins,
     timestamp: new Date().toISOString()

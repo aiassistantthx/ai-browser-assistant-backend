@@ -21,7 +21,8 @@ export class LangChainService {
       temperature: 0.7,
     });
 
-    const template = `Create a step-by-step plan to accomplish the following task in a web browser:
+    this.promptTemplate = new PromptTemplate({
+      template: `Create a step-by-step plan to accomplish the following task in a web browser:
 {command}
 
 Respond with a JSON object containing an array of steps. Each step should have:
@@ -34,9 +35,9 @@ Example response:
     {"action": "navigate", "params": {"url": "https://example.com"}},
     {"action": "click", "params": {"selector": "#submit-button"}}
   ]
-}`;
-
-    this.promptTemplate = PromptTemplate.fromTemplate(template);
+}`,
+      inputVariables: ['command'],
+    });
   }
 
   async createTaskPlan(command: string): Promise<TaskPlan> {

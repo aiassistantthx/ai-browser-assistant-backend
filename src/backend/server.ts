@@ -8,9 +8,9 @@ import { createServer } from 'http';
 const app = express();
 const langChainService = new LangChainService();
 
-// Enable CORS with WebSocket support
+// Enable CORS
 app.use(cors({
-  origin: config.allowedOrigins,
+  origin: '*', // Temporarily allow all origins for testing
   methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true
@@ -18,13 +18,37 @@ app.use(cors({
 
 app.use(express.json());
 
-// Add a health check endpoint
+// Add health check endpoint
 app.get('/health', (req, res) => {
   res.status(200).json({ 
     status: 'ok',
     timestamp: new Date().toISOString(),
-    allowedOrigins: config.allowedOrigins
+    allowedOrigins: config.allowedOrigins,
+    environment: process.env.NODE_ENV,
+    port: process.env.PORT
   });
+});
+
+// Add connection test endpoint
+app.get('/connection-test', (req, res) => {
+  const origin = req.headers.origin;
+  console.log('Connection test from origin:', origin);
+  
+  if (config.allowedOrigins.includes(origin)) {
+    res.status(200).json({
+      status: 'ok',
+      message: 'Connection test successful',
+      origin: origin,
+      timestamp: new Date().toISOString()
+    });
+  } else {
+    res.status(403).json({
+      status: 'error',
+      message: 'Origin not allowed',
+      origin: origin,
+      allowedOrigins: config.allowedOrigins
+    });
+  }
 });
 
 // Create HTTP server
@@ -34,8 +58,11 @@ const server = createServer(app);
 const wss = new WebSocketServer({ 
   server,
   clientTracking: true,
-  perMessageDeflate: false // Disable compression for Railway proxy compatibility
+  perMessageDeflate: false
 });
+
+// Track connected clients
+const clients = new Map();
 
 // WebSocket server error handling
 wss.on('error', (error) => {
@@ -44,32 +71,45 @@ wss.on('error', (error) => {
 
 // Connection handling
 wss.on('connection', (ws, request) => {
+  const clientId = Date.now().toString();
   const clientIp = request.socket.remoteAddress;
   const clientOrigin = request.headers.origin;
   
-  console.log('New client connected');
-  console.log('Client IP:', clientIp);
-  console.log('Client Origin:', clientOrigin);
-  console.log('Total connected clients:', wss.clients.size);
-  console.log('Request headers:', request.headers);
+  console.log('New client connected:', {
+    id: clientId,
+    ip: clientIp,
+    origin: clientOrigin,
+    timestamp: new Date().toISOString()
+  });
 
-  // Send immediate welcome message
+  // Store client information
+  clients.set(clientId, {
+    ws,
+    ip: clientIp,
+    origin: clientOrigin,
+    connectedAt: new Date()
+  });
+
+  console.log('Total connected clients:', clients.size);
+
+  // Send welcome message
   ws.send(JSON.stringify({
     type: 'CONNECTION_ESTABLISHED',
+    clientId: clientId,
     timestamp: new Date().toISOString()
   }));
 
   // Handle incoming messages
   ws.on('message', async (message) => {
     try {
-      console.log('Received message:', message.toString());
+      console.log('Received message from client', clientId + ':', message.toString());
       const data = JSON.parse(message.toString());
       
       if (data.type === 'INIT') {
         console.log('Received INIT message with sessionId:', data.sessionId);
         ws.send(JSON.stringify({ 
           type: 'SESSION_INIT',
-          sessionId: data.sessionId || Date.now().toString()
+          sessionId: data.sessionId || clientId
         }));
         return;
       }
@@ -94,7 +134,7 @@ wss.on('connection', (ws, request) => {
       }
 
       if (data.type === 'BROWSER_STATE') {
-        console.log('Received browser state update');
+        console.log('Received browser state update from client', clientId);
         return;
       }
 
@@ -114,13 +154,14 @@ wss.on('connection', (ws, request) => {
 
   // Handle client disconnect
   ws.on('close', () => {
-    console.log('Client disconnected');
-    console.log('Remaining clients:', wss.clients.size);
+    console.log('Client disconnected:', clientId);
+    clients.delete(clientId);
+    console.log('Remaining clients:', clients.size);
   });
 
   // Handle errors
   ws.on('error', (error) => {
-    console.error('WebSocket client error:', error);
+    console.error('WebSocket client error:', clientId, error);
   });
 });
 

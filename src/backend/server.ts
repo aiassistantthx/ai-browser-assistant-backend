@@ -5,63 +5,101 @@ import { config } from './config';
 import cors from 'cors';
 import { createServer } from 'http';
 
-const app = express();
-const langChainService = new LangChainService();
+// Error handling for uncaught exceptions
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:', error);
+  // Keep the process running
+});
 
-// Enable CORS with specific configuration
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  // Keep the process running
+});
+
+const app = express();
+
+// Initialize services
+let langChainService: LangChainService;
+try {
+  langChainService = new LangChainService();
+  console.log('LangChain service initialized successfully');
+} catch (error) {
+  console.error('Error initializing LangChain service:', error);
+  langChainService = null;
+}
+
+// Basic error handling middleware
+app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  console.error('Express error:', err);
+  res.status(500).json({ 
+    error: 'Internal Server Error',
+    message: err.message
+  });
+});
+
+// Enable CORS
 app.use(cors({
-  origin: (origin, callback) => {
-    if (!origin || config.allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
+  origin: '*', // Allow all origins for now
   methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
-  credentials: true
 }));
 
 app.use(express.json());
 
 // Basic route for root path
 app.get('/', (req, res) => {
-  res.status(200).json({ message: 'AI Browser Assistant API' });
+  res.status(200).json({ 
+    message: 'AI Browser Assistant API',
+    version: '1.0.0',
+    timestamp: new Date().toISOString()
+  });
 });
 
 // Health check endpoint
 app.get('/health', (req, res) => {
-  res.status(200).json({ 
+  const health = {
     status: 'ok',
     timestamp: new Date().toISOString(),
-    allowedOrigins: config.allowedOrigins,
-    environment: process.env.NODE_ENV || 'development',
-    port: process.env.PORT || 3000
-  });
+    env: {
+      NODE_ENV: process.env.NODE_ENV || 'development',
+      PORT: process.env.PORT || 3000,
+    },
+    config: {
+      allowedOrigins: config.allowedOrigins
+    },
+    services: {
+      langchain: langChainService ? 'initialized' : 'failed'
+    },
+    memory: process.memoryUsage(),
+    uptime: process.uptime()
+  };
+
+  console.log('Health check:', health);
+  res.status(200).json(health);
 });
 
 // Connection test endpoint
 app.get('/connection-test', (req, res) => {
   const origin = req.headers.origin || 'unknown';
-  console.log('Connection test request:', {
+  const requestInfo = {
     origin,
     headers: req.headers,
     ip: req.ip,
     timestamp: new Date().toISOString()
-  });
+  };
   
+  console.log('Connection test request:', requestInfo);
   res.status(200).json({
     status: 'ok',
     message: 'Connection test successful',
-    origin: origin,
-    timestamp: new Date().toISOString()
+    request: requestInfo
   });
 });
 
 // Create HTTP server
 const server = createServer(app);
 
-// Configure WebSocket server with specific path
+// Configure WebSocket server
 const wss = new WebSocketServer({ 
   server,
   path: '/ws',
@@ -101,11 +139,15 @@ wss.on('connection', (ws, request) => {
   });
 
   // Send welcome message
-  ws.send(JSON.stringify({
-    type: 'CONNECTION_ESTABLISHED',
-    clientId: clientId,
-    timestamp: new Date().toISOString()
-  }));
+  try {
+    ws.send(JSON.stringify({
+      type: 'CONNECTION_ESTABLISHED',
+      clientId: clientId,
+      timestamp: new Date().toISOString()
+    }));
+  } catch (error) {
+    console.error('Error sending welcome message:', error);
+  }
 
   // Handle incoming messages
   ws.on('message', async (message) => {
@@ -126,6 +168,14 @@ wss.on('connection', (ws, request) => {
           break;
           
         case 'ANALYZE_TASK':
+          if (!langChainService) {
+            ws.send(JSON.stringify({
+              type: 'ERROR',
+              error: 'LangChain service is not available'
+            }));
+            break;
+          }
+          
           try {
             const taskPlan = await langChainService.createTaskPlan(data.task);
             ws.send(JSON.stringify({
@@ -137,13 +187,12 @@ wss.on('connection', (ws, request) => {
             console.error('Task analysis error:', error);
             ws.send(JSON.stringify({
               type: 'ERROR',
-              error: 'Failed to analyze task'
+              error: 'Failed to analyze task: ' + error.message
             }));
           }
           break;
           
         case 'BROWSER_STATE':
-          // Just log the state update
           console.log('Browser state updated:', {
             clientId,
             url: data.state?.url,
@@ -160,10 +209,14 @@ wss.on('connection', (ws, request) => {
       }
     } catch (error) {
       console.error('Message processing error:', error);
-      ws.send(JSON.stringify({ 
-        type: 'ERROR',
-        error: 'Failed to process message' 
-      }));
+      try {
+        ws.send(JSON.stringify({ 
+          type: 'ERROR',
+          error: 'Failed to process message: ' + error.message
+        }));
+      } catch (sendError) {
+        console.error('Error sending error message:', sendError);
+      }
     }
   });
 
@@ -180,7 +233,7 @@ wss.on('connection', (ws, request) => {
 
   // Handle errors
   ws.on('error', (error) => {
-    console.error('WebSocket error:', {
+    console.error('WebSocket client error:', {
       clientId,
       error,
       timestamp: new Date().toISOString()
@@ -190,11 +243,38 @@ wss.on('connection', (ws, request) => {
 
 // Start the server
 const port = parseInt(process.env.PORT || '3000', 10);
-server.listen(port, () => {
-  console.log(`Server started:`, {
-    port,
-    environment: process.env.NODE_ENV || 'development',
-    allowedOrigins: config.allowedOrigins,
-    timestamp: new Date().toISOString()
+
+try {
+  server.listen(port, () => {
+    const serverInfo = {
+      port,
+      pid: process.pid,
+      environment: process.env.NODE_ENV || 'development',
+      nodeVersion: process.version,
+      platform: process.platform,
+      memory: process.memoryUsage(),
+      timestamp: new Date().toISOString()
+    };
+    
+    console.log('Server started:', serverInfo);
+    console.log('Configuration:', {
+      allowedOrigins: config.allowedOrigins,
+      services: {
+        langchain: langChainService ? 'initialized' : 'failed'
+      }
+    });
   });
-});
+
+  server.on('error', (error: any) => {
+    console.error('Server error:', {
+      error: error.message,
+      code: error.code,
+      syscall: error.syscall,
+      port: error.port,
+      timestamp: new Date().toISOString()
+    });
+  });
+} catch (error) {
+  console.error('Failed to start server:', error);
+  process.exit(1);
+}

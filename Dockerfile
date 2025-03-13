@@ -6,8 +6,12 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm install
 
-# Copy source code
+# Copy source code and config files
 COPY . .
+
+# Debug: List files to verify they were copied
+RUN ls -la
+RUN cat tsconfig.backend.json
 
 # Install TypeScript globally
 RUN npm install -g typescript

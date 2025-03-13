@@ -4,56 +4,54 @@ import { LangChainService } from './services/langchain';
 import { config } from './config';
 import cors from 'cors';
 import { createServer } from 'http';
-import { IncomingMessage } from 'http';
 
 const app = express();
 const langChainService = new LangChainService();
 
-// Enable CORS for all routes
+// Enable CORS with WebSocket support
 app.use(cors({
-  origin: config.allowedOrigins
+  origin: config.allowedOrigins,
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true
 }));
 
 app.use(express.json());
 
 // Add a health check endpoint
 app.get('/health', (req, res) => {
-  res.status(200).json({ status: 'ok' });
+  res.status(200).json({ 
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    allowedOrigins: config.allowedOrigins
+  });
 });
 
 // Create HTTP server
 const server = createServer(app);
 
-// Configure WebSocket server with path
+// Configure WebSocket server
 const wss = new WebSocketServer({ 
   server,
-  path: '/ws', // Add specific path for WebSocket
-  verifyClient: (info: { origin: string, req: IncomingMessage }, callback) => {
-    console.log('Connection attempt from origin:', info.origin);
-    console.log('Connection headers:', info.req.headers);
-    console.log('Allowed origins:', config.allowedOrigins);
-    
-    // For Chrome extensions, origin will be in the format 'chrome-extension://[extension-id]'
-    if (info.origin && config.allowedOrigins.includes(info.origin)) {
-      console.log('Origin verified successfully');
-      callback(true);
-    } else {
-      console.log('Origin verification failed');
-      callback(false, 403, 'Forbidden');
-    }
-  }
+  clientTracking: true,
+  perMessageDeflate: false // Disable compression for Railway proxy compatibility
 });
 
-// WebSocket error handling
+// WebSocket server error handling
 wss.on('error', (error) => {
   console.error('WebSocket server error:', error);
 });
 
 // Connection handling
 wss.on('connection', (ws, request) => {
-  console.log('Client connected');
-  console.log('Client headers:', request.headers);
-  console.log('Connected clients:', wss.clients.size);
+  const clientIp = request.socket.remoteAddress;
+  const clientOrigin = request.headers.origin;
+  
+  console.log('New client connected');
+  console.log('Client IP:', clientIp);
+  console.log('Client Origin:', clientOrigin);
+  console.log('Total connected clients:', wss.clients.size);
+  console.log('Request headers:', request.headers);
 
   // Send immediate welcome message
   ws.send(JSON.stringify({
@@ -127,7 +125,7 @@ wss.on('connection', (ws, request) => {
 });
 
 // Start the server
-const port = process.env.PORT || 8080;
+const port = process.env.PORT || 3000;
 server.listen(port, () => {
   console.log(`Server is running on port ${port}`);
   console.log('Environment:', process.env.NODE_ENV);

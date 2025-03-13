@@ -6,12 +6,12 @@ import cors from 'cors';
 import { createServer } from 'http';
 
 // Error handling for uncaught exceptions
-process.on('uncaughtException', (error) => {
+process.on('uncaughtException', (error: Error) => {
   console.error('Uncaught Exception:', error);
   // Keep the process running
 });
 
-process.on('unhandledRejection', (reason, promise) => {
+process.on('unhandledRejection', (reason: unknown, promise: Promise<unknown>) => {
   console.error('Unhandled Rejection at:', promise, 'reason:', reason);
   // Keep the process running
 });
@@ -19,17 +19,16 @@ process.on('unhandledRejection', (reason, promise) => {
 const app = express();
 
 // Initialize services
-let langChainService: LangChainService;
+let langChainService: LangChainService | undefined;
 try {
   langChainService = new LangChainService();
   console.log('LangChain service initialized successfully');
 } catch (error) {
-  console.error('Error initializing LangChain service:', error);
-  langChainService = null;
+  console.error('Error initializing LangChain service:', error instanceof Error ? error.message : String(error));
 }
 
 // Basic error handling middleware
-app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
   console.error('Express error:', err);
   res.status(500).json({ 
     error: 'Internal Server Error',
@@ -68,7 +67,7 @@ app.get('/health', (req, res) => {
       allowedOrigins: config.allowedOrigins
     },
     services: {
-      langchain: langChainService ? 'initialized' : 'failed'
+      langchain: langChainService ? 'initialized' : 'not initialized'
     },
     memory: process.memoryUsage(),
     uptime: process.uptime()
@@ -111,7 +110,7 @@ const wss = new WebSocketServer({
 const clients = new Map();
 
 // WebSocket server error handling
-wss.on('error', (error) => {
+wss.on('error', (error: Error) => {
   console.error('WebSocket server error:', error);
 });
 
@@ -146,7 +145,7 @@ wss.on('connection', (ws, request) => {
       timestamp: new Date().toISOString()
     }));
   } catch (error) {
-    console.error('Error sending welcome message:', error);
+    console.error('Error sending welcome message:', error instanceof Error ? error.message : String(error));
   }
 
   // Handle incoming messages
@@ -184,10 +183,10 @@ wss.on('connection', (ws, request) => {
               plan: taskPlan
             }));
           } catch (error) {
-            console.error('Task analysis error:', error);
+            console.error('Task analysis error:', error instanceof Error ? error.message : String(error));
             ws.send(JSON.stringify({
               type: 'ERROR',
-              error: 'Failed to analyze task: ' + error.message
+              error: `Failed to analyze task: ${error instanceof Error ? error.message : String(error)}`
             }));
           }
           break;
@@ -208,14 +207,14 @@ wss.on('connection', (ws, request) => {
           }));
       }
     } catch (error) {
-      console.error('Message processing error:', error);
+      console.error('Message processing error:', error instanceof Error ? error.message : String(error));
       try {
         ws.send(JSON.stringify({ 
           type: 'ERROR',
-          error: 'Failed to process message: ' + error.message
+          error: `Failed to process message: ${error instanceof Error ? error.message : String(error)}`
         }));
       } catch (sendError) {
-        console.error('Error sending error message:', sendError);
+        console.error('Error sending error message:', sendError instanceof Error ? sendError.message : String(sendError));
       }
     }
   });
@@ -232,10 +231,10 @@ wss.on('connection', (ws, request) => {
   });
 
   // Handle errors
-  ws.on('error', (error) => {
+  ws.on('error', (error: Error) => {
     console.error('WebSocket client error:', {
       clientId,
-      error,
+      error: error.message,
       timestamp: new Date().toISOString()
     });
   });
@@ -260,21 +259,21 @@ try {
     console.log('Configuration:', {
       allowedOrigins: config.allowedOrigins,
       services: {
-        langchain: langChainService ? 'initialized' : 'failed'
+        langchain: langChainService ? 'initialized' : 'not initialized'
       }
     });
   });
 
-  server.on('error', (error: any) => {
+  server.on('error', (error: Error) => {
     console.error('Server error:', {
       error: error.message,
-      code: error.code,
-      syscall: error.syscall,
-      port: error.port,
+      code: (error as any).code,
+      syscall: (error as any).syscall,
+      port: (error as any).port,
       timestamp: new Date().toISOString()
     });
   });
 } catch (error) {
-  console.error('Failed to start server:', error);
+  console.error('Failed to start server:', error instanceof Error ? error.message : String(error));
   process.exit(1);
 }
